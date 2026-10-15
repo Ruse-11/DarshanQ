@@ -15,11 +15,30 @@ const { initTelegramBot } = require('./services/telegramBot');
 const app = express();
 const httpServer = http.createServer(app);
 
+// ─── CORS Configuration ─────────────────────────────────────────────────────
+const allowedOrigins = (process.env.CLIENT_ORIGIN || 'http://localhost:5173')
+  .split(',')
+  .map((o) => o.trim().replace(/\/+$/, ''));
+
+function isOriginAllowed(origin) {
+  if (!origin) return true; // Server-to-server or tools without origin header
+  const clean = origin.replace(/\/+$/, '');
+  return (
+    allowedOrigins.includes('*') ||
+    allowedOrigins.includes(clean) ||
+    clean.endsWith('.vercel.app')
+  );
+}
+
 // ─── Socket.IO ───────────────────────────────────────────────────────────────
 const io = new Server(httpServer, {
   cors: {
-    origin: process.env.CLIENT_ORIGIN || 'http://localhost:5173',
+    origin: (origin, callback) => {
+      if (isOriginAllowed(origin)) callback(null, true);
+      else callback(null, true); // allow websocket fallback
+    },
     methods: ['GET', 'POST'],
+    credentials: true,
   },
 });
 registerSocketEvents(io);
@@ -28,7 +47,15 @@ registerSocketEvents(io);
 app.set('io', io);
 
 // ─── Middleware ───────────────────────────────────────────────────────────────
-app.use(cors({ origin: process.env.CLIENT_ORIGIN || 'http://localhost:5173' }));
+app.use(
+  cors({
+    origin: (origin, callback) => {
+      if (isOriginAllowed(origin)) callback(null, true);
+      else callback(new Error(`CORS blocked origin: ${origin}`));
+    },
+    credentials: true,
+  })
+);
 app.use(express.json());
 
 // ─── Routes ───────────────────────────────────────────────────────────────────
